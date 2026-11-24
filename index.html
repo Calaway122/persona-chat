@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Persona Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: #0f0f13; color: #f1f1f1; display: flex; height: 100dvh; overflow: hidden; }
+
+    /* Desktop Sidebar */
+    #sidebar { width: 260px; background: #17171e; border-right: 1px solid #2a2a35; display: flex; flex-direction: column; padding: 14px; gap: 10px; }
+    #sidebar h2 { font-size: 16px; color: #a5b4fc; margin-bottom: 4px; }
+    .char-btn { display: flex; align-items: center; gap: 10px; background: #22222c; border: 1px solid #2f2f3d; color: #fff; padding: 10px; border-radius: 8px; cursor: pointer; text-align: left; width: 100%; }
+    .char-btn.active { border-color: #6366f1; background: #282838; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0; }
+    .girl { background: #db2777; }
+    .boy { background: #2563eb; }
+    .char-info small { display: block; color: #9ca3af; font-size: 11px; }
+    .new-btn { background: #4f46e5; border: none; color: white; padding: 10px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: auto; }
+
+    /* Main Area */
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    header { background: #17171e; padding: 10px 12px; display: flex; gap: 6px; border-bottom: 1px solid #2a2a35; align-items: center; flex-wrap: wrap; }
+    #mobileCharSelect { display: none; flex: 1; min-width: 120px; }
+    input, select, button, textarea { background: #22222c; color: #fff; border: 1px solid #383847; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+    input[type="password"] { flex: 1; min-width: 110px; }
+    button { cursor: pointer; }
+    button.primary { background: #4f46e5; border: none; font-weight: 600; }
+    button.img-btn { background: #059669; border: none; font-weight: 600; }
+    button.danger { background: #dc2626; border: none; }
+
+    #chat { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 82%; padding: 10px 14px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; font-size: 14px; word-wrap: break-word; }
+    .user { align-self: flex-end; background: #4f46e5; }
+    .assistant { align-self: flex-start; background: #22222c; border: 1px solid #323240; }
+    .msg img { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+
+    footer { padding: 10px 12px; background: #17171e; display: flex; gap: 6px; border-top: 1px solid #2a2a35; align-items: center; }
+    #prompt { flex: 1; resize: none; height: 42px; font-size: 14px; }
+
+    /* Modal */
+    #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+    .modal-box { background: #1c1c24; padding: 18px; border-radius: 12px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #383847; }
+
+    /* Mobile Breakpoint */
+    @media (max-width: 680px) {
+      #sidebar { display: none; }
+      #mobileCharSelect { display: block; }
+      #activeTitle { display: none; }
+      .msg { max-width: 90%; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Characters</h2>
+  <div id="charList" style="display:flex; flex-direction:column; gap:8px; overflow-y:auto;"></div>
+  <button class="new-btn" onclick="openModal()">+ Create Character</button>
+</div>
+
+<div id="main">
+  <header>
+    <strong id="activeTitle" style="margin-right:auto;">Chat</strong>
+    <select id="mobileCharSelect" onchange="switchMobileChar(this.value)"></select>
+    <button class="primary" onclick="openModal()" title="New Character">+ Char</button>
+    <input type="password" id="apiKey" placeholder="Paste OpenRouter Key (sk-or-...)" />
+    <button class="primary" onclick="saveKey()">Save</button>
+    <button class="danger" onclick="clearCurrentChat()">Clear</button>
+  </header>
+
+  <div id="chat"></div>
+
+  <footer>
+    <textarea id="prompt" placeholder="Type message or image prompt..."></textarea>
+    <button class="img-btn" onclick="generateImage()" title="Generate Free Image">📷</button>
+    <button class="primary" onclick="sendMessage()">Send</button>
+  </footer>
+</div>
+
+<div id="modal">
+  <div class="modal-box">
+    <h3>New Character</h3>
+    <input id="cName" placeholder="Name (e.g., Tara, Kabir)" />
+    <select id="cGender">
+      <option value="girl">Girl</option>
+      <option value="boy">Boy</option>
+    </select>
+    <input id="cTag" placeholder="Short Tag (e.g., Flirty Best Friend, Savage Bro)" />
+    <textarea id="cPrompt" rows="4" placeholder="Personality & how they talk..."></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button onclick="closeModal()">Cancel</button>
+      <button class="primary" onclick="addCharacter()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const DEFAULT_CHARS = [
+    {
+      id: "riya",
+      name: "Riya",
+      gender: "girl",
+      tag: "Playful & Teasing",
+      prompt: "You are Riya, a 22-year-old witty, playful, and slightly flirtatious girl. You talk naturally like texting a close friend—casual, expressive, sometimes teasing, mixing light Hinglish when natural. Never sound like an AI or write long robotic paragraphs. Keep replies punchy (2-4 sentences) and engage emotionally."
+    },
+    {
+      id: "aarav",
+      name: "Aarav",
+      gender: "boy",
+      tag: "Savage & Chill Bro",
+      prompt: "You are Aarav, a 23-year-old sarcastic, brutally honest, loyal best friend. You roast your friend playfully, give unfiltered real talk without sugarcoating, and use casual everyday language and Hinglish banter. Never sound like a polite AI assistant. Keep replies natural and conversational."
+    },
+    {
+      id: "zoya",
+      name: "Zoya",
+      gender: "girl",
+      tag: "Deep & Late-Night Vibes",
+      prompt: "You are Zoya, a calm, intriguing, emotionally open girl who loves deep late-night conversations, hypothetical scenarios, and unfiltered thoughts. You speak warmly, directly, and without any judgment or disclaimers. Keep responses natural and human."
+    }
+  ];
+
+  let characters = JSON.parse(localStorage.getItem("ai_chars") || "null") || DEFAULT_CHARS;
+  let activeId = characters[0].id;
+
+  document.getElementById("apiKey").value = localStorage.getItem("openrouter_api_key") || "";
+
+  function saveKey() {
+    localStorage.setItem("openrouter_api_key", document.getElementById("apiKey").value.trim());
+    alert("OpenRouter API Key saved on this device!");
+  }
+
+  function getHistory(id) {
+    return JSON.parse(localStorage.getItem("chat_" + id) || "[]");
+  }
+
+  function saveHistory(id, hist) {
+    localStorage.setItem("chat_" + id, JSON.stringify(hist));
+  }
+
+  function switchMobileChar(id) {
+    activeId = id;
+    renderCharacters();
+    renderChat();
+  }
+
+  function renderCharacters() {
+    const list = document.getElementById("charList");
+    const mobileSelect = document.getElementById("mobileCharSelect");
+    list.innerHTML = "";
+    mobileSelect.innerHTML = "";
+
+    characters.forEach(c => {
+      const btn = document.createElement("button");
+      btn.className = "char-btn" + (c.id === activeId ? " active" : "");
+      btn.onclick = () => { activeId = c.id; renderCharacters(); renderChat(); };
+      btn.innerHTML = `
+        <div class="avatar ${c.gender}">${c.name[0].toUpperCase()}</div>
+        <div class="char-info">
+          <strong>${c.name}</strong>
+          <small>${c.tag}</small>
+        </div>
+      `;
+      list.appendChild(btn);
+
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = `${c.name} (${c.gender === 'girl' ? 'F' : 'M'})`;
+      if (c.id === activeId) opt.selected = true;
+      mobileSelect.appendChild(opt);
+    });
+
+    const current = characters.find(c => c.id === activeId);
+    document.getElementById("activeTitle").textContent = `${current.name} — ${current.tag}`;
+  }
+
+  function renderChat() {
+    const chatBox = document.getElementById("chat");
+    chatBox.innerHTML = "";
+    const hist = getHistory(activeId);
+    hist.forEach(m => {
+      const div = document.createElement("div");
+      div.className = `msg ${m.role}`;
+      if (m.image) {
+        div.innerHTML = `<div>${m.content}</div><img src="${m.image}" alt="Generated" />`;
+      } else {
+        div.textContent = m.content;
+      }
+      chatBox.appendChild(div);
+    });
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  function clearCurrentChat() {
+    localStorage.removeItem("chat_" + activeId);
+    renderChat();
+  }
+
+  async function callOpenRouter(model, systemPrompt, messages, apiKey) {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": window.location.href,
+        "X-Title": "Persona Chat"
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        temperature: 0.85
+      })
+    });
+    return await res.json();
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById("prompt");
+    const text = input.value.trim();
+    const apiKey = document.getElementById("apiKey").value.trim();
+
+    if (!text) return;
+    if (!apiKey) return alert("Paste your OpenRouter API key (sk-or-...) at the top and tap Save.");
+
+    const current = characters.find(c => c.id === activeId);
+    let hist = getHistory(activeId);
+    hist.push({ role: "user", content: text });
+    saveHistory(activeId, hist);
+    input.value = "";
+    renderChat();
+
+    const apiMessages = hist.slice(-16).map(m => ({ role: m.role, content: m.content }));
+
+    try {
+      let data = await callOpenRouter(
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+        current.prompt,
+        apiMessages,
+        apiKey
+      );
+
+      // Automatic fallback if the primary free uncensored endpoint is temporarily busy
+      if (data.error) {
+        data = await callOpenRouter("openrouter/free", current.prompt, apiMessages, apiKey);
+      }
+
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+      hist.push({ role: "assistant", content: data.choices[0].message.content });
+      saveHistory(activeId, hist);
+      renderChat();
+    } catch (err) {
+      hist.push({ role: "assistant", content: "Error: " + err.message });
+      renderChat();
+    }
+  }
+
+  function generateImage() {
+    const input = document.getElementById("prompt");
+    const promptText = input.value.trim();
+
+    if (!promptText) return alert("Type an image description in the text box first, then tap 📷.");
+
+    let hist = getHistory(activeId);
+    hist.push({ role: "user", content: "📷 Generate: " + promptText });
+    input.value = "";
+
+    const seed = Math.floor(Math.random() * 100000);
+    const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptText)}?width=768&height=768&nologo=true&seed=${seed}`;
+
+    hist.push({
+      role: "assistant",
+      content: promptText,
+      image: imgUrl
+    });
+    saveHistory(activeId, hist);
+    renderChat();
+  }
+
+  function openModal() { document.getElementById("modal").style.display = "flex"; }
+  function closeModal() { document.getElementById("modal").style.display = "none"; }
+
+  function addCharacter() {
+    const name = document.getElementById("cName").value.trim();
+    const gender = document.getElementById("cGender").value;
+    const tag = document.getElementById("cTag").value.trim() || "Custom Persona";
+    const prompt = document.getElementById("cPrompt").value.trim();
+    if (!name || !prompt) return alert("Enter a name and personality.");
+
+    const newChar = { id: "char_" + Date.now(), name, gender, tag, prompt };
+    characters.push(newChar);
+    localStorage.setItem("ai_chars", JSON.stringify(characters));
+    activeId = newChar.id;
+    closeModal();
+    renderCharacters();
+    renderChat();
+  }
+
+  document.getElementById("prompt").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  renderCharacters();
+  renderChat();
+</script>
+</body>
+</html>
